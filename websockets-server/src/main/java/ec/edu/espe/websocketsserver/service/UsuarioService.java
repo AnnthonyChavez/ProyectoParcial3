@@ -4,19 +4,21 @@ import ec.edu.espe.websocketsserver.entity.RoleEntity;
 import ec.edu.espe.websocketsserver.entity.UsuarioEntity;
 import ec.edu.espe.websocketsserver.repository.RoleEntityRepository;
 import ec.edu.espe.websocketsserver.repository.UsuarioRepository;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Optional;
 
 @Service
 public class UsuarioService {
     private final UsuarioRepository usuarioRepository;
     private final RoleEntityRepository roleEntityRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public UsuarioService(UsuarioRepository usuarioRepository, RoleEntityRepository roleEntityRepository) {
+    public UsuarioService(UsuarioRepository usuarioRepository, RoleEntityRepository roleEntityRepository, PasswordEncoder passwordEncoder) {
         this.usuarioRepository = usuarioRepository;
         this.roleEntityRepository = roleEntityRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     // Crear usuario con asignación de rol
@@ -24,6 +26,8 @@ public class UsuarioService {
         RoleEntity rol = roleEntityRepository.findByNombre(rolNombre)
                 .orElseThrow(() -> new RuntimeException("Rol no válido"));
 
+        // Encriptar la contraseña antes de guardar
+        usuario.setPassword(passwordEncoder.encode(usuario.getPassword()));
         usuario.setRol(rol);
         usuario.setStatus("ACTIVO");
         return usuarioRepository.save(usuario);
@@ -42,8 +46,9 @@ public class UsuarioService {
         usuario.setNombre(usuarioActualizado.getNombre());
         usuario.setEmail(usuarioActualizado.getEmail());
 
-        if (usuarioActualizado.getPassword() != null) {
-            usuario.setPassword(usuarioActualizado.getPassword());
+        // Solo actualizar la contraseña si se proporciona una nueva
+        if (usuarioActualizado.getPassword() != null && !usuarioActualizado.getPassword().isEmpty()) {
+            usuario.setPassword(passwordEncoder.encode(usuarioActualizado.getPassword()));
         }
 
         // Cambiar rol si se proporciona un nuevo rol
