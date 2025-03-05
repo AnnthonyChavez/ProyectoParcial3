@@ -11,9 +11,10 @@ import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import javax.crypto.SecretKey;
+import java.util.Map;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 
 @Component
 public class JwtWebSocketInterceptor implements HandshakeInterceptor {
