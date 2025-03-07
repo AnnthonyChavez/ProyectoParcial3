@@ -1,7 +1,9 @@
 import axios from 'axios';
+import config from '../config';
 
 // Asegurarnos de que la URL base es correcta
-const API_URL = 'http://localhost:8081/api/subastas';
+const API_URL = config.subastasUrl();
+console.log('API URL Subastas:', API_URL);
 
 // Configurar interceptor para incluir el token en todas las peticiones
 axios.interceptors.request.use(
@@ -99,6 +101,29 @@ const removerVehiculoDeSubasta = async (subastaId, vehiculoId) => {
   }
 };
 
+const realizarPuja = async (subastaId, monto, vehiculoId = null) => {
+  try {
+    const pujaData = {
+      subastaId: subastaId,
+      monto: monto
+    };
+    
+    // Añadir el ID del vehículo si se proporciona
+    if (vehiculoId !== null) {
+      pujaData.vehiculoId = vehiculoId;
+    }
+    
+    const response = await axios.post(`${API_URL}/${subastaId}/pujar`, pujaData);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`Error al realizar puja en subasta ${subastaId}:`, error.response || error);
+    return { 
+      success: false, 
+      message: error.response?.data?.message || 'Error al realizar la puja' 
+    };
+  }
+};
+
 const subastaService = {
   listarSubastas,
   obtenerSubasta,
@@ -107,7 +132,8 @@ const subastaService = {
   eliminarSubasta,
   buscarSubastasPorFecha,
   agregarVehiculoASubasta,
-  removerVehiculoDeSubasta
+  removerVehiculoDeSubasta,
+  realizarPuja
 };
 
 export default subastaService; 

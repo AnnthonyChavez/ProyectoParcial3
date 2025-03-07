@@ -18,16 +18,24 @@ const Vehiculos = () => {
         console.log('Vehículos recibidos:', data);
         console.log('Usuario actual:', user);
         
-        // Mostrar todos los vehículos sin filtrar por ahora
-        setVehiculos(data);
-        
-        /* Comentamos el filtro que está causando problemas
+        // Filtrar vehículos por vendedor si el usuario es un vendedor
         if (user && user.role === 'VENDEDOR') {
-          setVehiculos(data.filter(v => v.vendedor && v.vendedor.id === user.vendedorId));
-        } else {
+          // Filtrar por el ID del vendedor
+          const vehiculosFiltrados = data.filter(v => 
+            v.vendedor && 
+            v.vendedor.usuario && 
+            v.vendedor.usuario.email === user.email
+          );
+          console.log('Vehículos filtrados por vendedor:', vehiculosFiltrados);
+          setVehiculos(vehiculosFiltrados);
+        } else if (user && user.role === 'ADMIN') {
+          // Los administradores pueden ver todos los vehículos
           setVehiculos(data);
+        } else {
+          // Para otros roles (como COMPRADOR), no deberían ver esta página
+          // pero por si acaso, mostramos una lista vacía
+          setVehiculos([]);
         }
-        */
       } catch (error) {
         console.error('Error al cargar vehículos:', error);
         setError('No se pudieron cargar los vehículos. Inténtalo de nuevo más tarde.');

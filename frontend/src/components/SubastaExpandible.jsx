@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Badge, Button, Row, Col, Collapse } from 'react-bootstrap';
+import { Card, Badge, Button, Row, Col, Collapse, Alert } from 'react-bootstrap';
 import { formatDate, timeRemaining, isSubastaActive } from '../utils/dateUtils';
 import PujaForm from './PujaForm';
 import PujasList from './PujasList';
@@ -13,6 +13,8 @@ const SubastaExpandible = ({ subasta: subastaInicial }) => {
   const [pujas, setPujas] = useState(subastaInicial.pujas || []);
   const [expanded, setExpanded] = useState(false);
   const [timeLeft, setTimeLeft] = useState('');
+  const [selectedVehiculo, setSelectedVehiculo] = useState('');
+  const [wsError, setWsError] = useState('');
   const { isAuthenticated, user } = useAuth();
   
   const esActiva = isSubastaActive(subasta);
@@ -31,27 +33,93 @@ const SubastaExpandible = ({ subasta: subastaInicial }) => {
           setSubasta(data.subasta);
           setVehiculos(data.vehiculos || []);
           setPujas(data.pujas || []);
+          setWsError(''); // Limpiar errores previos
         } 
         else if (data.tipo === 'actualizacion_pujas') {
-          const nuevasPujas = data.pujas.filter(p => p.subastaId === subasta.id);
+          // Filtrar pujas que pertenecen a esta subasta
+          const nuevasPujas = data.pujas.filter(p => {
+            // Verificar si la puja tiene subastaId directo o a través de subastaVehiculo
+            if (p.subastaId) {
+              return p.subastaId === subasta.id;
+            } else if (p.subastaVehiculo && p.subastaVehiculo.subasta) {
+              return p.subastaVehiculo.subasta.id === subasta.id;
+            }
+            return false;
+          });
+          
           if (nuevasPujas.length > 0) {
+            console.log('Nuevas pujas recibidas:', nuevasPujas);
+            
             // Actualizar pujas con las nuevas
             setPujas(prevPujas => {
               const pujasActualizadas = [...prevPujas];
+              
               nuevasPujas.forEach(nuevaPuja => {
                 // Añadir clase para animación
                 nuevaPuja.isNew = true;
-                pujasActualizadas.push(nuevaPuja);
+                
+                // Verificar si ya existe una puja similar (mismo comprador y vehículo)
+                const index = pujasActualizadas.findIndex(p => 
+                  (p.comprador && nuevaPuja.comprador && p.comprador.id === nuevaPuja.comprador.id) &&
+                  (p.subastaVehiculo && nuevaPuja.subastaVehiculo && 
+                   p.subastaVehiculo.id === nuevaPuja.subastaVehiculo.id)
+                );
+                
+                if (index !== -1) {
+                  // Actualizar la puja existente
+                  pujasActualizadas[index] = nuevaPuja;
+                } else {
+                  // Añadir la nueva puja
+                  pujasActualizadas.push(nuevaPuja);
+                }
               });
+              
               return pujasActualizadas.sort((a, b) => b.monto - a.monto);
             });
           }
         }
         else if (data.tipo === 'subasta_finalizada' && data.subastaId === subasta.id) {
+          console.log('Subasta finalizada:', data);
+          
+          // Actualizar estado de la subasta
           setSubasta(prev => ({
             ...prev,
             estado: 'FINALIZADA'
           }));
+          
+          // Mostrar información de los ganadores
+          if (data.ganadores && data.ganadores.length > 0) {
+            // Crear un mensaje para mostrar en una alerta o toast
+            const ganadoresInfo = data.ganadores.map(ganador => {
+              if (ganador.sinPujas) {
+                return `${ganador.marca} ${ganador.modelo} (${ganador.anio}): Sin pujas`;
+              } else {
+                return `${ganador.marca} ${ganador.modelo} (${ganador.anio}): Ganador ${ganador.comprador} con $${ganador.monto.toFixed(2)}`;
+              }
+            }).join('\n');
+            
+            // Aquí puedes usar una librería de notificaciones como react-toastify
+            // o simplemente mostrar un alert
+            alert(`La subasta ha finalizado.\nResultados:\n${ganadoresInfo}`);
+          }
+        }
+        else if (data.tipo === 'subasta_finalizada_sin_pujas' && data.subastaId === subasta.id) {
+          console.log('Subasta finalizada sin pujas:', data);
+          
+          // Actualizar estado de la subasta
+          setSubasta(prev => ({
+            ...prev,
+            estado: 'FINALIZADA'
+          }));
+          
+          // Mostrar mensaje de que no hubo pujas
+          alert(data.mensaje);
+        }
+        else if (data.error && data.error.includes('puja')) {
+          // Manejar errores relacionados con pujas
+          setWsError(data.error);
+          // Mostrar el error por 5 segundos y luego limpiarlo
+          setTimeout(() => setWsError(''), 5000);
         }
       };
       
@@ -183,6 +251,25 @@ const SubastaExpandible = ({ subasta: subastaInicial }) => {
     return user.email === subasta.vendedor.usuario?.email;
   };
 
+  // Obtener la puja máxima para un vehículo específico
+  const getVehiculoPujaMaxima = (vehiculoId) => {
+    const vehiculoPujas = pujas.filter(puja => 
+      puja.subastaVehiculo && puja.subastaVehiculo.vehiculo && 
+      puja.subastaVehiculo.vehiculo.id === vehiculoId
+    );
+    
+    if (vehiculoPujas.length > 0) {
+      return Math.max(...vehiculoPujas.map(puja => puja.monto));
+    }
+    
+    return 0;
+  };
+
+  // Manejar la selección de un vehículo
+  const handleVehiculoSelect = (vehiculoId) => {
+    setSelectedVehiculo(vehiculoId === selectedVehiculo ? '' : vehiculoId);
+  };
+
   return (
     <Card className={`subasta-card ${subasta.estado.toLowerCase()}`}>
       {renderAuctionIcon()}
@@ -233,7 +320,13 @@ const SubastaExpandible = ({ subasta: subastaInicial }) => {
                   <p className="text-muted">No hay vehículos en esta subasta.</p>
                 ) : (
                   vehiculos.map(item => (
-                    <VehiculoCard key={item.id} vehiculo={item.vehiculo} />
+                    <VehiculoCard 
+                      key={item.id} 
+                      vehiculo={item.vehiculo} 
+                      pujaMaxima={getVehiculoPujaMaxima(item.vehiculo.id)}
+                      onSelect={esActiva && !isVendedor() ? handleVehiculoSelect : undefined}
+                      isSelected={item.vehiculo.id === selectedVehiculo}
+                    />
                   ))
                 )}
               </Col>
@@ -243,6 +336,7 @@ const SubastaExpandible = ({ subasta: subastaInicial }) => {
                 <PujasList 
                   pujas={pujas} 
                   subastaFinalizada={subasta.estado === 'FINALIZADA'}
+                  vehiculos={vehiculos}
                 />
               </Col>
             </Row>
@@ -257,6 +351,10 @@ const SubastaExpandible = ({ subasta: subastaInicial }) => {
                     subastaId={subasta.id} 
                     precioBase={getPrecioBase()} 
                     pujaMaxima={getPujaMaxima()} 
+                    vehiculos={vehiculos}
+                    selectedVehiculo={selectedVehiculo}
+                    wsError={wsError}
+                    onClearError={() => setWsError('')}
                   />
                 </Card.Body>
               </Card>

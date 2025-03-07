@@ -80,11 +80,27 @@ const DetalleSubasta = () => {
           }
         }
         else if (data.tipo === 'subasta_finalizada' && data.subastaId === parseInt(id)) {
+          console.log('Subasta finalizada:', data);
+          
+          // Actualizar estado de la subasta
           setSubasta(prev => ({
             ...prev,
             estado: 'FINALIZADA'
           }));
-          setError(`La subasta ha finalizado. Ganador: ${data.ganador} con una puja de $${data.monto.toFixed(2)}`);
+          
+          // Mostrar información de los ganadores
+          if (data.ganadores && data.ganadores.length > 0) {
+            // Crear un mensaje para mostrar
+            const ganadoresInfo = data.ganadores.map(ganador => {
+              if (ganador.sinPujas) {
+                return `${ganador.marca} ${ganador.modelo} (${ganador.anio}): Sin pujas`;
+              } else {
+                return `${ganador.marca} ${ganador.modelo} (${ganador.anio}): Ganador ${ganador.comprador} con $${ganador.monto.toFixed(2)}`;
+              }
+            }).join('\n');
+            
+            setError(`La subasta ha finalizado.\nResultados:\n${ganadoresInfo}`);
+          }
         }
         else if (data.tipo === 'subasta_finalizada_sin_pujas' && data.subastaId === parseInt(id)) {
           setSubasta(prev => ({
@@ -265,6 +281,7 @@ const DetalleSubasta = () => {
                   subastaId={parseInt(id)} 
                   precioBase={getPrecioBase()} 
                   pujaMaxima={getPujaMaxima()} 
+                  vehiculos={vehiculos}
                 />
               </Card.Body>
             </Card>
@@ -280,6 +297,7 @@ const DetalleSubasta = () => {
               <PujasList 
                 pujas={pujas} 
                 subastaFinalizada={subasta.estado === 'FINALIZADA'}
+                vehiculos={vehiculos}
               />
             </Card.Body>
           </Card>

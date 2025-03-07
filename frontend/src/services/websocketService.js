@@ -1,3 +1,5 @@
+import config from '../config';
+
 let socket = null;
 let messageHandlers = [];
 
@@ -9,9 +11,9 @@ const connect = (token) => {
         socket.close();
       }
 
-      // Crear nueva conexión
-      // Usamos la URL completa para conectarnos directamente al backend
-      const wsUrl = `ws://localhost:8081/ws/subastas?token=${token}`;
+      // Crear nueva conexión usando la configuración centralizada
+      const wsUrl = config.wsSubastasUrl(token);
+      console.log('Intentando conectar a WebSocket en:', wsUrl);
       socket = new WebSocket(wsUrl);
 
       socket.onopen = () => {
@@ -86,12 +88,17 @@ const requestActiveSubastas = () => {
   });
 };
 
-const realizarPuja = (subastaId, monto) => {
+const realizarPuja = (subastaId, monto, vehiculoId = null) => {
   // Asegurarse de que los tipos de datos sean correctos
   const mensaje = {
     subastaId: parseInt(subastaId),
     monto: parseFloat(monto)
   };
+  
+  // Añadir el ID del vehículo si se proporciona
+  if (vehiculoId !== null) {
+    mensaje.vehiculoId = parseInt(vehiculoId);
+  }
   
   console.log('Enviando mensaje de puja:', mensaje);
   sendMessage(mensaje);

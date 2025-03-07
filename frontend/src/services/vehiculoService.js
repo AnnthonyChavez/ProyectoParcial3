@@ -1,7 +1,9 @@
 import axios from 'axios';
+import config from '../config';
 
 // Asegurarnos de que la URL base es correcta
-const API_URL = 'http://localhost:8081/api/vehiculos';
+const API_URL = config.vehiculosUrl();
+console.log('API URL Vehículos:', API_URL);
 
 // Configurar interceptor para incluir el token en todas las peticiones
 axios.interceptors.request.use(

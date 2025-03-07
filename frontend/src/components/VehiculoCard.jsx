@@ -1,7 +1,7 @@
 import React from 'react';
-import { Card, Badge, ListGroup } from 'react-bootstrap';
+import { Card, Badge, ListGroup, Button } from 'react-bootstrap';
 
-const VehiculoCard = ({ vehiculo }) => {
+const VehiculoCard = ({ vehiculo, pujaMaxima, onSelect, isSelected }) => {
   if (!vehiculo) {
     return (
       <Card className="mb-3">
@@ -15,14 +15,14 @@ const VehiculoCard = ({ vehiculo }) => {
   // Reemplazamos la función getCarImage por un div con icono
   const renderVehicleIcon = () => {
     return (
-      <div className="text-center p-4 bg-light" style={{ fontSize: '4rem', color: '#007bff' }}>
+      <div className="text-center p-4 bg-light" style={{ fontSize: '4rem', color: isSelected ? '#28a745' : '#007bff' }}>
         <i className="fas fa-car"></i>
       </div>
     );
   };
 
   return (
-    <Card className="mb-3">
+    <Card className={`mb-3 ${isSelected ? 'border-success' : ''}`}>
       {renderVehicleIcon()}
       <Card.Body>
         <Card.Title>{vehiculo.marca} {vehiculo.modelo}</Card.Title>
@@ -36,7 +36,23 @@ const VehiculoCard = ({ vehiculo }) => {
           <ListGroup.Item>
             <strong>Precio Base:</strong> ${vehiculo.precioBase?.toFixed(2) || '0.00'}
           </ListGroup.Item>
+          {pujaMaxima > 0 && (
+            <ListGroup.Item className="text-success">
+              <strong>Puja Actual:</strong> ${pujaMaxima.toFixed(2)}
+            </ListGroup.Item>
+          )}
         </ListGroup>
+        
+        {onSelect && (
+          <div className="d-grid gap-2 mt-3">
+            <Button 
+              variant={isSelected ? "success" : "outline-primary"} 
+              onClick={() => onSelect(vehiculo.id)}
+            >
+              {isSelected ? 'Seleccionado' : 'Seleccionar para Pujar'}
+            </Button>
+          </div>
+        )}
       </Card.Body>
     </Card>
   );

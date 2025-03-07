@@ -28,6 +28,7 @@ import java.util.Optional;
 import java.util.Comparator;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.ArrayList;
 
 @Component
 public class AppWebSocketHandler extends TextWebSocketHandler {
@@ -131,7 +132,9 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
             if (jsonNode.has("subastaId") && jsonNode.has("monto")) {
                 Long subastaId = jsonNode.get("subastaId").asLong();
                 double monto = jsonNode.get("monto").asDouble();
-                System.out.println("Nueva puja recibida - SubastaID: " + subastaId + ", Monto: " + monto);
+                // Añadir soporte para el ID del vehículo
+                Long vehiculoId = jsonNode.has("vehiculoId") ? jsonNode.get("vehiculoId").asLong() : null;
+                System.out.println("Nueva puja recibida - SubastaID: " + subastaId + ", VehiculoID: " + vehiculoId + ", Monto: " + monto);
 
                 // Verificar que la subasta esté activa
                 Optional<SubastaEntity> subastaOpt = subastaService.listarSubastas().stream()
@@ -170,13 +173,30 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
                     return;
                 }
                 
-                // Para simplificar, tomamos el primer vehículo de la subasta
-                SubastaVehiculoEntity subastaVehiculo = vehiculosEnSubasta.get(0);
+                // Seleccionar el vehículo específico si se proporcionó un ID, de lo contrario usar el primero
+                SubastaVehiculoEntity subastaVehiculo;
+                if (vehiculoId != null) {
+                    // Buscar el vehículo específico en la lista de vehículos de la subasta
+                    Optional<SubastaVehiculoEntity> vehiculoSeleccionado = vehiculosEnSubasta.stream()
+                            .filter(sv -> sv.getVehiculo().getId().equals(vehiculoId))
+                            .findFirst();
+                    
+                    if (!vehiculoSeleccionado.isPresent()) {
+                        session.sendMessage(new TextMessage("{\"error\": \"El vehículo seleccionado no está en esta subasta\"}"));
+                        return;
+                    }
+                    
+                    subastaVehiculo = vehiculoSeleccionado.get();
+                } else {
+                    // Para compatibilidad con versiones anteriores, si no se especifica vehículo, usar el primero
+                    subastaVehiculo = vehiculosEnSubasta.get(0);
+                }
                 
                 // Verificar que la puja sea mayor que el precio base del vehículo
                 double precioBase = subastaVehiculo.getVehiculo().getPrecioBase();
                 if (monto < precioBase) {
-                    session.sendMessage(new TextMessage("{\"error\": \"La puja debe ser mayor o igual al precio base: " + precioBase + "\"}"));
+                    String vehiculoInfo = subastaVehiculo.getVehiculo().getMarca() + " " + subastaVehiculo.getVehiculo().getModelo();
+                    session.sendMessage(new TextMessage("{\"error\": \"La puja para " + vehiculoInfo + " debe ser mayor o igual al precio base: " + precioBase + "\"}"));
                     return;
                 }
                 
@@ -188,12 +208,13 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
                         .orElse(0.0);
                 
                 if (monto <= pujaMaxima) {
-                    session.sendMessage(new TextMessage("{\"error\": \"La puja debe ser mayor que la puja más alta actual: " + pujaMaxima + "\"}"));
+                    String vehiculoInfo = subastaVehiculo.getVehiculo().getMarca() + " " + subastaVehiculo.getVehiculo().getModelo();
+                    session.sendMessage(new TextMessage("{\"error\": \"La puja para " + vehiculoInfo + " debe ser mayor que la puja más alta actual: " + pujaMaxima + "\"}"));
                     return;
                 }
 
                 // Guardar la puja en memoria para actualizaciones en tiempo real
-                PujaDTO nuevaPuja = new PujaDTO(subastaId, username, monto);
+                PujaDTO nuevaPuja = new PujaDTO(subastaId, username, monto, subastaVehiculo.getId());
                 pujas.put(username, nuevaPuja);
                 
                 // Guardar la puja en la base de datos
@@ -210,10 +231,8 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
 
     private void guardarPujaEnBaseDeDatos(String email, Long subastaVehiculoId, double monto) {
         try {
-            // Buscar el comprador por email
-            Optional<CompradorEntity> compradorOpt = compradorRepository.findAll().stream()
-                    .filter(c -> c.getUsuario() != null && email.equals(c.getUsuario().getEmail()))
-                    .findFirst();
+            // Buscar el comprador por email usando el nuevo método del repositorio
+            Optional<CompradorEntity> compradorOpt = compradorRepository.findByUsuarioEmail(email);
             
             if (!compradorOpt.isPresent()) {
                 System.out.println("No se encontró el comprador con email: " + email);
@@ -287,12 +306,17 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
             List<SubastaVehiculoEntity> vehiculosEnSubasta = subastaVehiculoService.listarVehiculosEnSubasta(subastaId);
             data.put("vehiculos", vehiculosEnSubasta);
             
-            // Añadir información de pujas para esta subasta
+            // Añadir información de pujas para todos los vehículos de esta subasta
             if (!vehiculosEnSubasta.isEmpty()) {
-                // Para simplificar, tomamos el primer vehículo de la subasta
-                SubastaVehiculoEntity subastaVehiculo = vehiculosEnSubasta.get(0);
-                List<PujaEntity> pujasSubasta = pujaService.listarPujas(subastaVehiculo.getId());
-                data.put("pujas", pujasSubasta);
+                List<PujaEntity> todasLasPujas = new ArrayList<>();
+                
+                // Obtener las pujas de cada vehículo en la subasta
+                for (SubastaVehiculoEntity subastaVehiculo : vehiculosEnSubasta) {
+                    List<PujaEntity> pujasVehiculo = pujaService.listarPujas(subastaVehiculo.getId());
+                    todasLasPujas.addAll(pujasVehiculo);
+                }
+                
+                data.put("pujas", todasLasPujas);
             } else {
                 data.put("pujas", List.of());
             }
@@ -308,7 +332,33 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
     private void sendPujasUpdate() throws IOException {
         Map<String, Object> data = new HashMap<>();
         data.put("tipo", "actualizacion_pujas");
-        data.put("pujas", pujas.values());
+        
+        // Convertir las pujas en memoria a entidades completas con relaciones
+        List<PujaEntity> pujasCompletas = new ArrayList<>();
+        for (PujaDTO pujaDTO : pujas.values()) {
+            // Buscar la relación subasta-vehículo
+            Optional<SubastaVehiculoEntity> subastaVehiculoOpt = subastaVehiculoService.listarVehiculosEnSubasta(null).stream()
+                    .filter(sv -> sv.getId().equals(pujaDTO.getVehiculoId()))
+                    .findFirst();
+            
+            if (subastaVehiculoOpt.isPresent()) {
+                // Buscar el comprador
+                Optional<CompradorEntity> compradorOpt = compradorRepository.findByUsuarioEmail(pujaDTO.getComprador());
+                
+                if (compradorOpt.isPresent()) {
+                    // Crear una entidad de puja completa
+                    PujaEntity puja = new PujaEntity();
+                    puja.setMonto(pujaDTO.getMonto());
+                    puja.setSubastaVehiculo(subastaVehiculoOpt.get());
+                    puja.setComprador(compradorOpt.get());
+                    puja.setFechaPuja(LocalDateTime.now());
+                    
+                    pujasCompletas.add(puja);
+                }
+            }
+        }
+        
+        data.put("pujas", pujasCompletas);
         
         String updateMessage = MAPPER.writeValueAsString(data);
         System.out.println("Enviando actualización de pujas a " + SESSIONS.size() + " sesiones");
@@ -366,38 +416,59 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
             
-            // Para simplificar, tomamos el primer vehículo de la subasta
-            SubastaVehiculoEntity subastaVehiculo = vehiculosEnSubasta.get(0);
+            // Lista para almacenar los ganadores de cada vehículo
+            List<Map<String, Object>> ganadoresPorVehiculo = new ArrayList<>();
+            boolean hayGanadores = false;
             
-            // Determinar ganador (puja más alta)
-            List<PujaEntity> pujasSubasta = pujaService.listarPujas(subastaVehiculo.getId());
-            Optional<PujaEntity> pujaGanadora = pujasSubasta.stream()
-                    .max(Comparator.comparing(PujaEntity::getMonto));
-            
-            if (pujaGanadora.isPresent()) {
-                PujaEntity puja = pujaGanadora.get();
-                System.out.println("Puja ganadora: " + puja.getMonto() + " por " + puja.getComprador().getUsuario().getEmail());
+            // Iterar sobre cada vehículo en la subasta
+            for (SubastaVehiculoEntity subastaVehiculo : vehiculosEnSubasta) {
+                // Determinar ganador (puja más alta) para este vehículo
+                List<PujaEntity> pujasVehiculo = pujaService.listarPujas(subastaVehiculo.getId());
+                Optional<PujaEntity> pujaGanadora = pujasVehiculo.stream()
+                        .max(Comparator.comparing(PujaEntity::getMonto));
                 
-                // Cambiar estado de los vehículos a VENDIDO
-                for (SubastaVehiculoEntity sv : vehiculosEnSubasta) {
-                    VehiculoEntity vehiculo = sv.getVehiculo();
-                    // Actualizar el estado del vehículo en la base de datos
+                if (pujaGanadora.isPresent()) {
+                    PujaEntity puja = pujaGanadora.get();
+                    System.out.println("Puja ganadora para vehículo ID " + subastaVehiculo.getVehiculo().getId() + 
+                                      ": " + puja.getMonto() + " por " + puja.getComprador().getUsuario().getEmail());
+                    
+                    // Cambiar estado del vehículo a VENDIDO
+                    VehiculoEntity vehiculo = subastaVehiculo.getVehiculo();
                     vehiculoService.actualizarEstadoVehiculo(vehiculo.getId(), "VENDIDO");
-                }
-                
-                // Notificar a todos los clientes conectados
-                notificarFinalizacionSubasta(subasta, puja);
-            } else {
-                System.out.println("No hubo pujas para la subasta ID: " + subasta.getId());
-                
-                // Cambiar estado de los vehículos a DISPONIBLE para que puedan ser subastados nuevamente
-                for (SubastaVehiculoEntity sv : vehiculosEnSubasta) {
-                    VehiculoEntity vehiculo = sv.getVehiculo();
-                    // Actualizar el estado del vehículo en la base de datos
+                    
+                    // Agregar información del ganador a la lista
+                    Map<String, Object> ganadorInfo = new HashMap<>();
+                    ganadorInfo.put("vehiculoId", vehiculo.getId());
+                    ganadorInfo.put("marca", vehiculo.getMarca());
+                    ganadorInfo.put("modelo", vehiculo.getModelo());
+                    ganadorInfo.put("anio", vehiculo.getAnio());
+                    ganadorInfo.put("comprador", puja.getComprador().getUsuario().getEmail());
+                    ganadorInfo.put("monto", puja.getMonto());
+                    ganadoresPorVehiculo.add(ganadorInfo);
+                    
+                    hayGanadores = true;
+                } else {
+                    System.out.println("No hubo pujas para el vehículo ID: " + subastaVehiculo.getVehiculo().getId());
+                    
+                    // Cambiar estado del vehículo a DISPONIBLE para que pueda ser subastado nuevamente
+                    VehiculoEntity vehiculo = subastaVehiculo.getVehiculo();
                     vehiculoService.actualizarEstadoVehiculo(vehiculo.getId(), "DISPONIBLE");
+                    
+                    // Agregar información del vehículo sin ganador
+                    Map<String, Object> vehiculoSinGanador = new HashMap<>();
+                    vehiculoSinGanador.put("vehiculoId", vehiculo.getId());
+                    vehiculoSinGanador.put("marca", vehiculo.getMarca());
+                    vehiculoSinGanador.put("modelo", vehiculo.getModelo());
+                    vehiculoSinGanador.put("anio", vehiculo.getAnio());
+                    vehiculoSinGanador.put("sinPujas", true);
+                    ganadoresPorVehiculo.add(vehiculoSinGanador);
                 }
-                
-                // Notificar a todos los clientes conectados
+            }
+            
+            // Notificar a todos los clientes conectados
+            if (hayGanadores) {
+                notificarFinalizacionSubasta(subasta, ganadoresPorVehiculo);
+            } else {
                 notificarFinalizacionSubastaSinPujas(subasta);
             }
         } catch (Exception e) {
@@ -405,12 +476,12 @@ public class AppWebSocketHandler extends TextWebSocketHandler {
         }
     }
     
-    private void notificarFinalizacionSubasta(SubastaEntity subasta, PujaEntity pujaGanadora) throws IOException {
+    private void notificarFinalizacionSubasta(SubastaEntity subasta, List<Map<String, Object>> ganadoresPorVehiculo) throws IOException {
         Map<String, Object> data = new HashMap<>();
         data.put("tipo", "subasta_finalizada");
         data.put("subastaId", subasta.getId());
-        data.put("ganador", pujaGanadora.getComprador().getUsuario().getEmail());
-        data.put("monto", pujaGanadora.getMonto());
+        data.put("mensaje", "La subasta ha finalizado");
+        data.put("ganadores", ganadoresPorVehiculo);
         
         String message = MAPPER.writeValueAsString(data);
         for (WebSocketSession session : SESSIONS) {

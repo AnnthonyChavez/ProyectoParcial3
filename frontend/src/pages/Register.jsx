@@ -8,7 +8,8 @@ const Register = () => {
     nombre: '',
     email: '',
     password: '',
-    confirmPassword: ''
+    confirmPassword: '',
+    rolNombre: 'COMPRADOR' // Por defecto, COMPRADOR
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -120,6 +121,24 @@ const Register = () => {
                 required
                 placeholder="Confirma tu contraseña"
               />
+            </Form.Group>
+            
+            <Form.Group className="mb-3" controlId="rolNombre">
+              <Form.Label>Tipo de Usuario</Form.Label>
+              <Form.Select
+                name="rolNombre"
+                value={userData.rolNombre}
+                onChange={handleChange}
+                required
+              >
+                <option value="COMPRADOR">Comprador</option>
+                <option value="VENDEDOR">Vendedor</option>
+              </Form.Select>
+              <Form.Text className="text-muted">
+                {userData.rolNombre === 'COMPRADOR' ? 
+                  'Como comprador, podrás participar en subastas y realizar pujas.' : 
+                  'Como vendedor, podrás crear subastas y añadir vehículos.'}
+              </Form.Text>
             </Form.Group>
             
             <Button 

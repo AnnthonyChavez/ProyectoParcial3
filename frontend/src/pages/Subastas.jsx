@@ -19,8 +19,24 @@ const Subastas = () => {
         console.log('Subastas recibidas:', data);
         console.log('Usuario actual:', user);
         
-        // Mostrar todas las subastas sin filtrar por ahora
-        setSubastas(data);
+        // Filtrar subastas por vendedor si el usuario es un vendedor
+        if (user && user.role === 'VENDEDOR') {
+          // Filtrar por el email del vendedor
+          const subastasFiltradas = data.filter(s => 
+            s.vendedor && 
+            s.vendedor.usuario && 
+            s.vendedor.usuario.email === user.email
+          );
+          console.log('Subastas filtradas por vendedor:', subastasFiltradas);
+          setSubastas(subastasFiltradas);
+        } else if (user && user.role === 'ADMIN') {
+          // Los administradores pueden ver todas las subastas
+          setSubastas(data);
+        } else {
+          // Para otros roles (como COMPRADOR), no deberían ver esta página
+          // pero por si acaso, mostramos una lista vacía
+          setSubastas([]);
+        }
       } catch (error) {
         console.error('Error al cargar subastas:', error);
         setError('No se pudieron cargar las subastas. Inténtalo de nuevo más tarde.');

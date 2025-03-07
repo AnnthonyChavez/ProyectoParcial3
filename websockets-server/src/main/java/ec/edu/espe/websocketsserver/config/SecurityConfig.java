@@ -27,7 +27,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/api/usuarios/crear").permitAll()
                         .requestMatchers("/api/usuarios/**", "/api/roles/**").hasRole("ADMIN")
-                        .requestMatchers("/api/subastas/**", "/api/vehiculos/**", "/api/subasta-vehiculo/**").hasAnyRole("VENDEDOR", "ADMIN")
+                        .requestMatchers("/api/subastas/**", "/api/vehiculos/**", "/api/subasta-vehiculo/**").hasAnyRole("VENDEDOR", "ADMIN","COMPRADOR")
                         .requestMatchers("/api/pujas/**").hasAnyRole("COMPRADOR", "ADMIN")
                         .requestMatchers("/ws/**").authenticated()
                         .anyRequest().authenticated()

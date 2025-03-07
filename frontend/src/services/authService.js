@@ -1,6 +1,8 @@
 import axios from 'axios';
+import config from '../config';
 
-const API_URL = '/api/auth';
+const API_URL = config.authUrl();
+console.log('API URL Auth:', API_URL);
 
 const login = async (credentials) => {
   const response = await axios.post(`${API_URL}/login`, credentials);
@@ -8,9 +10,11 @@ const login = async (credentials) => {
 };
 
 const register = async (userData) => {
-  const response = await axios.post('/api/usuarios/crear', userData, {
+  const { rolNombre = 'COMPRADOR', ...userDataWithoutRole } = userData;
+  
+  const response = await axios.post('/api/usuarios/crear', userDataWithoutRole, {
     params: {
-      rolNombre: 'COMPRADOR'
+      rolNombre: rolNombre
     }
   });
   return response.data;
